@@ -14,7 +14,7 @@ def precomputations( L, verify=True ):
   enumerating fields. This function does those computations, and returns a
   dictionary keyed by strings with those values, as follows:
   { "discriminant"       : Absolute discriminant of L
-  , "prime_ramification" : A map of primes of ZZ which ramify in O_L to their factorization in O_L
+  , "prime_splitting"    : A map of primes of ZZ which factor in O_L to their factorization in O_L
   , "unit_adjusts"       : A collection of units of O_L which correspond
                            bijectively with the cosets of the 2-torsion of the
                            units of O_L.
@@ -29,12 +29,6 @@ def precomputations( L, verify=True ):
     if L.class_number() != 1:
       return None
   D = L.discriminant()
-  ramifying_primes = prime_factors(D)
-  prime_ramification = {}
-  for p in ramifying_primes:
-    p_ideal_inQ = Q.fractional_ideal(p)
-    p_ideal_inL = L.fractional_ideal(p)
-    prime_ramification[p_ideal_inQ] = map( lambda (prime, power): prime, p_ideal_inL.factor() )
   U_L = L.unit_group()
   ngens = U_L.ngens()
   unit_adjust_vectors = [[]]
@@ -45,7 +39,6 @@ def precomputations( L, verify=True ):
   unit_adjusts = map( U_L.exp, unit_adjust_vectors )
   return \
   { "discriminant"       : D
-  , "prime_ramification" : prime_ramification
   , "unit_adjusts"       : unit_adjusts
   }
 
@@ -94,7 +87,7 @@ def partition_range_maxk( S, n, k ):
       for suffix in partition_range_maxk( S-i, n-1, k ):
         yield prefix + suffix
 
-def invert_norm( in_factors, L, prime_ramification ):
+def invert_norm( in_factors, L ):
   """
   Let L/N be an extension of fields, wherein L and N are both number fields.
 
@@ -114,48 +107,7 @@ def invert_norm( in_factors, L, prime_ramification ):
   leads to some computational optimizations which are listed below and noted as
   they happen.
   """
-  nonramifying_factors = []
-  ramifying_factors = []
-  itertools.ifilter( lambda t: not(t[0] in prime_ramification), in_factors )
-  for prime, power in in_factors:
-    if prime in prime_ramification:
-      ramifying_factors.append( (prime,power) )
-    else:
-      nonramifying_factors.append( (prime,power) )
-  #print( "Nonramifying factors: " + str(nonramifying_factors) )
-  #print( "Ramifying factors   : " + str(ramifying_factors) )
-  # The following for loop is an optimization for quadratic extensions.
-  P2 = Q.fractional_ideal(2)
-  for prime, power in nonramifying_factors:
-    if power > 3 or (power > 1 and prime != Q.fractional_ideal(2)):
-      # Everything that would be output by invert_norm will be divisible by
-      # some ideal squared. So stop before doing all the hard work.
-      return
-  # The following for loop is an optimization for quadratic extensions.
-  for prime, power in ramifying_factors:
-    if power > len( prime_ramification[prime] ):
-      # By the pigeon-hole principle, everything that would be output by
-      # invert_norm must contain some upstairs prime which has power > 2,
-      # implying the ideal is divisible by a square prime ideal.
-      return
-  # First, turn the nonramifying bits into ideals of M rather than N
-  nonramified_factors = map( lambda (ideal, power): (L.fractional_ideal(ideal.gens()), power), nonramifying_factors )
-  #print( "Nonramified factors : " + str(nonramified_factors) )
-  # Second, ramify the ramifying bits.
-  # The below uses partition_range_maxk with k=1 as an optimization for the
-  # quadratic case; note that partition_range should be used in general.
-  ramification_power_gens = itertools.imap( lambda (prime, power): partition_range_maxk(power, len(prime_ramification[prime]), 1), ramifying_factors )
-  for ramification_powers in itertools.product( *ramification_power_gens ):
-    # ramification_powers can be seen as a matrix wherein ramification_powers[i][j] is
-    # the exponent on prime_ramification[ramifying_factors[i]][j]
-    # That is, ramification_powers[i] is a list of powers for each of the
-    # primes lying above p, where p = ramifying_factors[i][0].
-    ramified_factors = []
-    for i, ramification_powers_on_prime in enumerate( ramification_powers ):
-      prime = ramifying_factors[i][0]
-      ramified_factors += itertools.izip(prime_ramification[prime], ramification_powers_on_prime)
-    #print( "Ramified factors    : " + str(ramified_factors) )
-    yield Factorization( nonramified_factors + ramified_factors )
+  return
 
 def expand_unit_adjusts( elt, unit_adjusts ):
   """
@@ -174,7 +126,7 @@ def generate_quadexts_withD( L, L_precomp, D ):
   N = D/(L_precomp["discriminant"]^2)
   NI = Q.fractional_ideal(N)
   R.<x> = PolynomialRing(L)
-  for relative_discriminant_factorization in invert_norm( list(NI.factor()), L, L_precomp["prime_ramification"] ):
+  for relative_discriminant_factorization in invert_norm( list(NI.factor()), L ):
     relative_discriminant_factorization = list(relative_discriminant_factorization)
     relative_discriminant = None
     if len(relative_discriminant_factorization) == 0:
