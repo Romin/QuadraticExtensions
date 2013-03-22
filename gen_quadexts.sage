@@ -29,6 +29,7 @@ def precomputations( L, verify=True ):
     if L.class_number() != 1:
       return None
   D = L.discriminant()
+  is_galois = L.is_galois()
   U_L = L.unit_group()
   ngens = U_L.ngens()
   unit_adjust_vectors = [[]]
@@ -39,6 +40,7 @@ def precomputations( L, verify=True ):
   unit_adjusts = map( U_L.exp, unit_adjust_vectors )
   return \
   { "discriminant"       : D
+  , "is_galois"          : is_galois
   , "unit_adjusts"       : unit_adjusts
   }
 
@@ -87,7 +89,7 @@ def partition_range_maxk( S, n, k ):
       for suffix in partition_range_maxk( S-i, n-1, k ):
         yield prefix + suffix
 
-def invert_norm( in_factors, L ):
+def invert_norm( in_factors, L, L_precomp ):
   """
   Let L/N be an extension of fields, wherein L and N are both number fields.
 
@@ -107,6 +109,14 @@ def invert_norm( in_factors, L ):
   leads to some computational optimizations which are listed below and noted as
   they happen.
   """
+  if L_precomp["is_galois"]:
+		if len( in_factors ) == 0:
+			raise NotImplementedError( " I really don't wanna " )
+		downstairs_ideal, power = in_factors[0]
+		upstairs_ideal = L.ideal( downstairs_ideal.gens() )
+		# TODO: finish this
+	else:
+		raise NotImplementedError("DON'T GIVE NONGALOIS FIELDS YET")
   return
 
 def expand_unit_adjusts( elt, unit_adjusts ):
@@ -126,7 +136,7 @@ def generate_quadexts_withD( L, L_precomp, D ):
   N = D/(L_precomp["discriminant"]^2)
   NI = Q.fractional_ideal(N)
   R.<x> = PolynomialRing(L)
-  for relative_discriminant_factorization in invert_norm( list(NI.factor()), L ):
+  for relative_discriminant_factorization in invert_norm( list(NI.factor()), L, L_precomp ):
     relative_discriminant_factorization = list(relative_discriminant_factorization)
     relative_discriminant = None
     if len(relative_discriminant_factorization) == 0:
