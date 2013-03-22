@@ -105,16 +105,27 @@ def invert_norm( in_factors, L, L_precomp ):
   norm A.
 
   NOTE: This has some optimizations for this program; in particular we're
-  interested only in ideals which are square-free or <4>*square-free. This
-  leads to some computational optimizations which are listed below and noted as
-  they happen.
+	interested only in ideals which are square-free. This leads to some
+	computational optimizations which are listed below and noted as they happen.
+	- partition_range_maxk is used with k=1 to ensure squarefree-ness instead of
+	  partition_range.
+	- the non-galois case is not implemented, since we're only interested in
+	  Q(z_9), which is galois.
   """
+	if len( in_factors ) == 0:
+		yield Factorization([])
+		return
+	downstairs_ideal, downstairs_power = in_factors[0]
+	upstairs_factorization = L.ideal(downstairs_ideal.gens()).factor()
+	upstairs_ideals = map( lambda (ideal, power): ideal, upstairs_factorization )
   if L_precomp["is_galois"]:
-		if len( in_factors ) == 0:
-			raise NotImplementedError( " I really don't wanna " )
-		downstairs_ideal, power = in_factors[0]
-		upstairs_ideal = L.ideal( downstairs_ideal.gens() )
-		# TODO: finish this
+		residue_class_degree = upstairs_ideals[0].residue_class_degree()
+		if not residue_class_degree.divides( downstairs_power ):
+			return
+		for exponents in partition_range_maxk( downstairs_power/residue_class_degree, len(upstairs_ideals), 1 ):
+			this_factor = Factorization( zip(upstairs_ideals, exponents) )
+			for other_factors in invert_norm( in_factors[1:], L, L_precomp ):
+				yield this_factor * other_factors
 	else:
 		raise NotImplementedError("DON'T GIVE NONGALOIS FIELDS YET")
   return
