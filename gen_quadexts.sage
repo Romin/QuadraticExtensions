@@ -135,11 +135,17 @@ def invert_norm( in_factors, L, L_precomp ):
 		yield Factorization([])
 		return
 	downstairs_ideal, downstairs_power = in_factors[0]
-	upstairs_factorization = L.ideal(downstairs_ideal.gens()).factor()
+	upstairs_factorization = L.fractional_ideal(downstairs_ideal.gens()).factor()
 	upstairs_ideals = map( lambda (ideal, power): ideal, upstairs_factorization )
 	if L_precomp["is_galois"]:
 		residue_class_degree = upstairs_ideals[0].residue_class_degree()
 		if not residue_class_degree.divides( downstairs_power ):
+			return
+		# The 1 here is the `k' argument to partition_range_maxk
+		if downstairs_power/residue_class_degree > len(upstairs_ideals)*1:
+			# We'd pass invalid arguments to partition_range_maxk.
+			# Plus the pigeon-hole principle guarantees that we cannot have a
+			# square-free ideal.
 			return
 		for other_factors in invert_norm( in_factors[1:], L, L_precomp ):
 			for exponents in partition_range_maxk( downstairs_power/residue_class_degree, len(upstairs_ideals), 1 ):
@@ -167,6 +173,8 @@ def generate_quadexts_withD( L, L_precomp, D ):
 	NI = Q.fractional_ideal(N)
 	R.<x> = PolynomialRing(L)
 	relative_discriminant_factorization_generator = invert_norm( list(NI.factor()), L, L_precomp )
+	# The flag here being True indicates that the ideals in the associated
+	# generator will have the 4 pulled out of them.
 	flag_and_gens = [ (False, relative_discriminant_factorization_generator) ]
 	if L(4).norm().divides( N ):
 		NI4 = Q.fractional_ideal( N / L(4) )
@@ -186,20 +194,21 @@ def generate_quadexts_withD( L, L_precomp, D ):
 				if numbfld_gen == 1: # Skip 1 because it's dumb
 					continue
 				numbfld_gen_mod4 = L_precomp["mod4"]( numbfld_gen )
-				if flag: # We want numbfld_gen _IS_ a square mod 4
-					if numbfld_gen_mod4 not in L_precomp["squares_mod4"]:
-						continue
-				else: # We want numbfld_gen _IS_NOT_ a square mod 4
+				if flag: # We want numbfld_gen _IS_NOT_ a square mod 4
 					if numbfld_gen_mod4 in L_precomp["squares_mod4"]:
+						print("Throwing out {x} for N={N}, is a square mod 4".format(x=numbfld_gen, N=N/4))
+						continue
+				else: # We want numbfld_gen _IS_ a square mod 4
+					if numbfld_gen_mod4 not in L_precomp["squares_mod4"]:
+						print("Throwing out {x} for N={N}, not a square mod 4".format(x=numbfld_gen, N=N))
 						continue
 				yield L.extension( x^2 - numbfld_gen, 'm' )
 	return
 
 L.<zeta9> = NumberField(x^6 + x^3 + 1)
 precomps = precomputations(L)
-D = 5*(precomps["discriminant"]^2)
-for k in precomps:
-	print(str(k) + " => \t" + str(precomps[k]))
+D = 3*(L(4).norm())*(precomps["discriminant"]^2)
+print("Pre-computations completed. Continuing with enumeration.")
 print
 
 Ks = []
