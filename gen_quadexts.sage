@@ -167,7 +167,7 @@ def generate_quadexts_withD( L, L_precomp, D ):
 	enumerate every quadratic extension of L (via L_precomp) with absolute value
 	of the absolute discriminant equal to D exactly once.
 	"""
-	if not ((L_precomp["discriminant"])^2).divides( D ):
+	if gcd( L_precomp["discriminant"]^2, D ) != L_precomp["discriminant"]^2:
 		return
 	N = D/(L_precomp["discriminant"]^2)
 	NI = Q.fractional_ideal(N)
@@ -176,7 +176,8 @@ def generate_quadexts_withD( L, L_precomp, D ):
 	# The flag here being True indicates that the ideals in the associated
 	# generator will have the 4 pulled out of them.
 	flag_and_gens = [ (False, generator) ]
-	if L(4).norm().divides( N ):
+	if gcd( L(4).norm(), N ) == L(4).norm():
+		print( "N={N}, N4={N4}".format(N=N, N4=N/L(4).norm()) )
 		NI4 = Q.fractional_ideal( N / (L(4).norm()) )
 		generator = invert_norm( list(NI4.factor()), L, L_precomp )
 		flag_and_gens.append( (True, generator) )
@@ -207,8 +208,8 @@ def generate_quadexts_withD( L, L_precomp, D ):
 
 L.<zeta9> = NumberField(x^6 + x^3 + 1)
 precomps = precomputations(L)
-#D = 3*(L(4).norm())*(precomps["discriminant"]^2)
-D = 3*(precomps["discriminant"]^2)
+D = 3*(L(4).norm())*(precomps["discriminant"]^2)
+#D = 3*(precomps["discriminant"]^2)
 print("Pre-computations completed. Continuing with enumeration.")
 print
 
