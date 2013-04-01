@@ -92,7 +92,7 @@ def partition_range_maxk( S, n, k ):
 	In particular, 0 <= S <= n*k, n > 0, and k > 0.
 	"""
 	if S < 0 or S > n*k or n <= 0 or k <= 0:
-		raise Exception("partition_range_maxk got bad arguments.")
+		raise Exception("partition_range_maxk got bad arguments: S={S}, n={n}, k={k}".format(S=S,n=n,k=k))
 	if n == 1:
 		yield [S]
 	else:
@@ -172,16 +172,16 @@ def generate_quadexts_withD( L, L_precomp, D ):
 	N = D/(L_precomp["discriminant"]^2)
 	NI = Q.fractional_ideal(N)
 	R.<x> = PolynomialRing(L)
-	relative_discriminant_factorization_generator = invert_norm( list(NI.factor()), L, L_precomp )
+	generator = invert_norm( list(NI.factor()), L, L_precomp )
 	# The flag here being True indicates that the ideals in the associated
 	# generator will have the 4 pulled out of them.
-	flag_and_gens = [ (False, relative_discriminant_factorization_generator) ]
+	flag_and_gens = [ (False, generator) ]
 	if L(4).norm().divides( N ):
 		NI4 = Q.fractional_ideal( N / (L(4).norm()) )
-		relative_discriminant_factorization_generator = invert_norm( list(NI4.factor()), L, L_precomp )
-		flag_and_gens.append( (True, relative_discriminant_factorization_generator) )
-	for flag, relative_discriminant_factorization_generator in flag_and_gens:
-		for relative_discriminant_factorization in relative_discriminant_factorization_generator:
+		generator = invert_norm( list(NI4.factor()), L, L_precomp )
+		flag_and_gens.append( (True, generator) )
+	for flag, generator in flag_and_gens:
+		for relative_discriminant_factorization in generator:
 			relative_discriminant_factorization = list(relative_discriminant_factorization)
 			relative_discriminant = None
 			if len(relative_discriminant_factorization) == 0:
