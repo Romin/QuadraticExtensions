@@ -51,11 +51,10 @@ def precomputations( L, verify=True ):
 		for j in range(4):
 			next_elt_vectors += map( lambda v: [j] + v, mod4_elt_vectors )
 		mod4_elt_vectors = next_elt_vectors
-	#mod4_elts = sum( map( lambda (a, b): a*b, itertools.izip(mod4_elt_vectors ) )
 	paired = itertools.izip( mod4_elt_vectors, itertools.repeat(basis) )
 	superpaired = itertools.starmap( zip, paired )
 	mod4_elts = itertools.imap( lambda elts: sum(map(prod,elts)), superpaired )
-	mod4_squares = set( [O_L_4O_L(a*a) for a in mod4_elts] )
+	mod4_squares = Set( [O_L_4O_L(a*a) for a in mod4_elts] )
 	return \
 	{ "discriminant"       : D
 	, "is_galois"          : is_galois
@@ -115,8 +114,8 @@ def invert_norm( in_factors, L, L_precomp ):
 
 	For some ideal A of O_N, compute all ideals of O_L which have relative norm
 	equal to A.
-	(This might be extendable to any fractional ideals, but I don't care at this
-	point.)
+	(This might be extendable to any fractional ideals in the sense that some
+	factors have negative exponents, but I don't care at this point.)
 
 	The inputs are in_factors, which is the factorization of A, L, and
 	prime_splittings, the information on how prime ideals split in L.
@@ -142,9 +141,9 @@ def invert_norm( in_factors, L, L_precomp ):
 		residue_class_degree = upstairs_ideals[0].residue_class_degree()
 		if not residue_class_degree.divides( downstairs_power ):
 			return
-		for exponents in partition_range_maxk( downstairs_power/residue_class_degree, len(upstairs_ideals), 1 ):
-			this_factor = Factorization( zip(upstairs_ideals, exponents) )
-			for other_factors in invert_norm( in_factors[1:], L, L_precomp ):
+		for other_factors in invert_norm( in_factors[1:], L, L_precomp ):
+			for exponents in partition_range_maxk( downstairs_power/residue_class_degree, len(upstairs_ideals), 1 ):
+				this_factor = Factorization( zip(upstairs_ideals, exponents) )
 				yield this_factor * other_factors
 	else:
 		raise NotImplementedError("DON'T GIVE NONGALOIS FIELDS YET")
@@ -159,8 +158,8 @@ def expand_unit_adjusts( elt, unit_adjusts ):
 
 def generate_quadexts_withD( L, L_precomp, D ):
 	"""
-	enumerate every quadratic extension of L (via L_precomp) with absolute
-	discriminant equal to D exactly once.
+	enumerate every quadratic extension of L (via L_precomp) with absolute value
+	of the absolute discriminant equal to D exactly once.
 	"""
 	if gcd( D, (L_precomp["discriminant"])^2 ) != (L_precomp["discriminant"])^2:
 		return
@@ -204,7 +203,7 @@ for k in precomps:
 print
 
 Ks = []
-for K in generate_quadexts_withD( L, precomps, 5*(precomps["discriminant"]^2) ):
+for K in generate_quadexts_withD( L, precomps, D ):
 	Ks.append(K)
 
 print("Got {n} number fields:".format(n=len(Ks)))
@@ -215,6 +214,7 @@ print
 print("Discriminants. Expect D={D}".format(D=D))
 for K in Ks:
 	print("{K} -> disc(K)={D}".format(K=K,D=K.absolute_field('a').discriminant()))
+print
 
 bad = 0
 for K1,K2 in itertools.combinations(Ks,2):
