@@ -70,7 +70,7 @@ def partition_range( S, n ):
 
 	I assume n > 0 and S >= 0.
 	"""
-	if n <= 0 or S > 0:
+	if n <= 0 or S < 0:
 		raise Exception("partition_range got bad arguments.")
 	if n == 1:
 		yield [S]
@@ -91,7 +91,7 @@ def partition_range_maxk( S, n, k ):
 	Note that this *ASSUMES* that the given S, n, k combination is feasible.
 	In particular, 0 <= S <= n*k, n > 0, and k > 0.
 	"""
-	if S < 0 or S > n*k or n <= 0 or k <= 0:
+	if S < 0 or S > n*k or n <= 0 or k < 0:
 		raise Exception("partition_range_maxk got bad arguments: S={S}, n={n}, k={k}".format(S=S,n=n,k=k))
 	if n == 1:
 		yield [S]
@@ -177,7 +177,7 @@ def generate_quadexts_withD( L, L_precomp, D ):
 	# generator will have the 4 pulled out of them.
 	flag_and_gens = [ (False, generator) ]
 	if gcd( L(4).norm(), N ) == L(4).norm():
-		print( "N={N}, N4={N4}".format(N=N, N4=N/L(4).norm()) )
+		#print( "N={N}, N4={N4}".format(N=N, N4=N/L(4).norm()) )
 		NI4 = Q.fractional_ideal( N / (L(4).norm()) )
 		generator = invert_norm( list(NI4.factor()), L, L_precomp )
 		flag_and_gens.append( (True, generator) )
@@ -186,53 +186,40 @@ def generate_quadexts_withD( L, L_precomp, D ):
 			relative_discriminant_factorization = list(relative_discriminant_factorization)
 			relative_discriminant = None
 			if len(relative_discriminant_factorization) == 0:
-				print("Got relative discriminant which is all of L")
+				#print("Got relative discriminant which is all of L")
 				relative_discriminant = L.fractional_ideal(1)
 			else:
 				relative_discriminant = Factorization(relative_discriminant_factorization).expand()
 			base_gen = relative_discriminant.gens_reduced()[0]
 			for numbfld_gen in expand_unit_adjusts( base_gen, L_precomp["unit_adjusts"] ):
-				if numbfld_gen == 1: # Skip 1 because it's dumb
+				#TODO: Not just 1, but ANY square-associate of 1.
+				# But in fact, Sage just chooses 1 as the generator of <1> as an ideal
+				# of O_L, and expand_unit_adjusts will not take us to anything else
+				# which is a square unit.
+				if numbfld_gen == 1:
 					continue
 				numbfld_gen_mod4 = L_precomp["mod4"]( numbfld_gen )
 				if flag: # We want numbfld_gen _IS_NOT_ a square mod 4
 					if numbfld_gen_mod4 in L_precomp["squares_mod4"]:
-						print("D={D}, N={N}, {x} is a square mod 4".format(x=numbfld_gen, D=D, N=N/L(4).norm()))
+						#print("D={D}, N={N}, {x} is a square mod 4".format(x=numbfld_gen, D=D, N=N/L(4).norm()))
 						continue
 				else: # We want numbfld_gen _IS_ a square mod 4
 					if numbfld_gen_mod4 not in L_precomp["squares_mod4"]:
-						print("D={D}, N={N}, {x} is not a square mod 4".format(x=numbfld_gen, D=D, N=N))
+						#print("D={D}, N={N}, {x} is not a square mod 4".format(x=numbfld_gen, D=D, N=N))
 						continue
+				print( "m={m}, in squares_mod4? {res}".format(m=numbfld_gen, res=(numbfld_gen_mod4 in L_precomp["squares_mod4"])) )
 				yield L.extension( x^2 - numbfld_gen, 'm' )
 	return
 
 L.<zeta9> = NumberField(x^6 + x^3 + 1)
 precomps = precomputations(L)
-D = 3*(L(4).norm())*(precomps["discriminant"]^2)
-#D = 3*(precomps["discriminant"]^2)
-print("Pre-computations completed. Continuing with enumeration.")
-print
 
-Ks = []
-for K in generate_quadexts_withD( L, precomps, D ):
-	Ks.append(K)
+LOWER_BOUND = 38466592932321/precomps["discriminant"]^2
+UPPER_BOUND = 38466592932321/precomps["discriminant"]^2
 
-print("Got {n} number fields:".format(n=len(Ks)))
-for K in Ks:
-	print("\t{K}".format(K=K))
-print
-
-print("Discriminants. Expect D={D}".format(D=D))
-for K in Ks:
-	print("{K} -> disc(K)={D}".format(K=K,D=K.absolute_field('a').discriminant()))
-print
-
-bad = 0
-for K1,K2 in itertools.combinations(Ks,2):
-	if K1.is_isomorphic(K2):
-		print("ISOMORPHISM:")
-		print("\t" + str(K1))
-		print("\t" + str(K2))
-		bad += 1
-print("# pairs which are isomorphic: {bad}".format(bad=bad))
+for D_part in xrange( LOWER_BOUND, UPPER_BOUND+1 ):
+	D = D_part * precomps["discriminant"]^2
+	for K in generate_quadexts_withD( L, precomps, D ):
+		print( "{D}\t{poly}".format(D=D, poly=K.absolute_polynomial()) )
+		
 
