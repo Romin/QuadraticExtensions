@@ -2,11 +2,16 @@
 # (generally referred to as L)
 #
 # One requirement is that the field's class number must be 1 for this to work.
+#
+# Also, though not a theoretical requirement for this algorithm, there are
+# optimizations that exist when L is Galois, and only those optimizations are
+# implemented; the non-Galois case is not yet implemented.
 
 import itertools
 import os
 
-# For my own sanity.
+# Sage has QQ, but that doesn't have NumberField capabilities, so this serves
+# as our canonical field of rationals.
 Q = NumberField(x,'a')
 
 # The parameters of this computation
@@ -48,8 +53,14 @@ def precomputations( L, verify=True ):
 		next_adjust_vectors += map( lambda v: [1] + v, unit_adjust_vectors )
 		unit_adjust_vectors = next_adjust_vectors
 	unit_adjusts = map( U_L.exp, unit_adjust_vectors )
-	# TODO: This method of creating a set of all squares mod 4 is pretty stupid
-	# and could probably be improved.
+	# TODO: This method of creating a set of all squares mod 4 could probably be
+	# improved.
+	# For example, with L=Q(zeta9), mod4_elt_vectors gets to size 4096, but
+	# mod4_squares has size only 64.
+	# Would it be sufficient to generate the vectors with just 0, 1 as
+	# coordinates rather than 0, 1, 2, 3? And then eliminate the Set
+	# functionality, etc.?
+	# (Since 0^2, 1^2 are all the squares in Z/4Z.)
 	O_L = L.ring_of_integers()
 	O_L_4O_L = O_L.quotient( O_L.ideal(4), 'q' )
 	basis = O_L.basis()
@@ -160,7 +171,7 @@ def invert_norm( in_factors, L, L_precomp ):
 				this_factor = Factorization( zip(upstairs_ideals, exponents) )
 				yield this_factor * other_factors
 	else:
-		raise NotImplementedError("DON'T GIVE NONGALOIS FIELDS YET")
+		raise NotImplementedError("Currently only L which are Galois are supported by invert_norm.")
 	return
 
 def expand_unit_adjusts( elt, unit_adjusts ):
@@ -179,43 +190,37 @@ def generate_quadexts_withD( L, L_precomp, D ):
 		return
 	N = D/(L_precomp["discriminant"]^2)
 	NI = Q.fractional_ideal(N)
-	R.<x> = PolynomialRing(L)
+	R.<z> = PolynomialRing(L)
 	generator = invert_norm( list(NI.factor()), L, L_precomp )
 	# The flag here being True indicates that the ideals in the associated
 	# generator will have the 4 pulled out of them.
 	flag_and_gens = [ (False, generator) ]
 	if gcd( L(4).norm(), N ) == L(4).norm():
-		#print( "N={N}, N4={N4}".format(N=N, N4=N/L(4).norm()) )
 		NI4 = Q.fractional_ideal( N / (L(4).norm()) )
 		generator = invert_norm( list(NI4.factor()), L, L_precomp )
 		flag_and_gens.append( (True, generator) )
 	for flag, generator in flag_and_gens:
 		for relative_discriminant_factorization in generator:
 			relative_discriminant_factorization = list(relative_discriminant_factorization)
-			relative_discriminant = None
+			base_gen = None
 			if len(relative_discriminant_factorization) == 0:
-				#print("Got relative discriminant which is all of L")
-				relative_discriminant = L.fractional_ideal(1)
+				# Pick 1 as the generator to simplify the filtering of square units
+				# later. (1 will be the only potential square unit.)
+				base_gen = L(1)
 			else:
 				relative_discriminant = Factorization(relative_discriminant_factorization).expand()
-			base_gen = relative_discriminant.gens_reduced()[0]
+				base_gen = relative_discriminant.gens_reduced()[0]
 			for numbfld_gen in expand_unit_adjusts( base_gen, L_precomp["unit_adjusts"] ):
-				#TODO: Not just 1, but ANY square-associate of 1.
-				# But in fact, Sage just chooses 1 as the generator of <1> as an ideal
-				# of O_L, and expand_unit_adjusts will not take us to anything else
-				# which is a square unit.
-				if numbfld_gen == 1:
+				if numbfld_gen == L(1):
 					continue
 				numbfld_gen_mod4 = L_precomp["mod4"]( numbfld_gen )
 				if flag: # We want numbfld_gen _IS_NOT_ a square mod 4
 					if numbfld_gen_mod4 in L_precomp["squares_mod4"]:
-						#print("D={D}, N={N}, {x} is a square mod 4".format(x=numbfld_gen, D=D, N=N/L(4).norm()))
 						continue
 				else: # We want numbfld_gen _IS_ a square mod 4
 					if numbfld_gen_mod4 not in L_precomp["squares_mod4"]:
-						#print("D={D}, N={N}, {x} is not a square mod 4".format(x=numbfld_gen, D=D, N=N))
 						continue
-				yield numbfld_gen, L.extension( x^2 - numbfld_gen, 'm' )
+				yield numbfld_gen, L.extension( z^2 - numbfld_gen, 'm' )
 	return
 
 @parallel
