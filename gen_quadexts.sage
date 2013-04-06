@@ -17,7 +17,7 @@ Q = NumberField(x,'a')
 # The parameters of this computation
 OUTDIR    = os.path.join( os.getcwd(), "Q_zeta9" )
 L.<zeta9> = NumberField(x^6 + x^3 + 1)
-PART_SIZE = 10^5
+PART_SIZE = 10^4
 START     = 10^0
 END       = 10^8
 
