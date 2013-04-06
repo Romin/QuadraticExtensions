@@ -4,9 +4,17 @@
 # One requirement is that the field's class number must be 1 for this to work.
 
 import itertools
+import os
 
 # For my own sanity.
 Q = NumberField(x,'a')
+
+# The parameters of this computation
+OUTDIR    = os.path.join( os.getcwd(), "Q_zeta9" )
+L.<zeta9> = NumberField(x^6 + x^3 + 1)
+PART_SIZE = 10^5
+START     = 10^0
+END       = 10^8
 
 def precomputations( L, verify=True ):
 	"""
@@ -207,19 +215,35 @@ def generate_quadexts_withD( L, L_precomp, D ):
 					if numbfld_gen_mod4 not in L_precomp["squares_mod4"]:
 						#print("D={D}, N={N}, {x} is not a square mod 4".format(x=numbfld_gen, D=D, N=N))
 						continue
-				print( "m={m}, in squares_mod4? {res}".format(m=numbfld_gen, res=(numbfld_gen_mod4 in L_precomp["squares_mod4"])) )
-				yield L.extension( x^2 - numbfld_gen, 'm' )
+				yield numbfld_gen, L.extension( x^2 - numbfld_gen, 'm' )
 	return
 
-L.<zeta9> = NumberField(x^6 + x^3 + 1)
+@parallel
+def pump_out_fields_in_range( dlow, dhigh, L, L_precomps ):
+	outfile = open( "{dlow}-{dhigh}.polys.lst".format(dlow=dlow,dhigh=dhigh), 'w' )
+	for D_part in xrange( dlow, dhigh ):
+		D = D_part * precomps["discriminant"]^2
+		for m, K in generate_quadexts_withD( L, precomps, D ):
+			p = K.absolute_polynomial()
+			line = "{D}:{m}:{coefficients}".format( D=D, m=m, coefficients=p.coeffs() )
+			outfile.write( line+"\n" )
+	outfile.close()
+	return
+
+def get_disc_partitions( low, high, size ):
+	n_parts = (high - low + size - 1)/size # ceil((high - low)/size)
+	for i in xrange( n_parts ):
+		z = min( high, (i+1)*size )
+		yield (low + i*size, z)
+
+os.chdir( OUTDIR )
+
+partitions = get_disc_partitions( START, END, PART_SIZE )
+args_gen = itertools.imap( lambda (l,h): (l,h,L,precomps), partitions )
+
 precomps = precomputations(L)
 
-LOWER_BOUND = 38466592932321/precomps["discriminant"]^2
-UPPER_BOUND = 38466592932321/precomps["discriminant"]^2
-
-for D_part in xrange( LOWER_BOUND, UPPER_BOUND+1 ):
-	D = D_part * precomps["discriminant"]^2
-	for K in generate_quadexts_withD( L, precomps, D ):
-		print( "{D}\t{poly}".format(D=D, poly=K.absolute_polynomial()) )
-		
+for args, _ignore in pump_out_fields_in_range( list(args_gen) ):
+	args = args[0] # don't want keyword args
+	print("Finished range [{low},{high}]".format(low=args[0], high=args[1]))
 
