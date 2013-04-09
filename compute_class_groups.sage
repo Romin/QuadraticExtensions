@@ -10,11 +10,6 @@ PART_SIZE = 10^4
 START     = 10^0
 END       = 10^8
 
-# Test
-PART_SIZE = 10^4
-START     = 10^0
-END       = 2*10^4
-
 def parse_numberfield( string ):
 	poly_coeffs_str = string.split(":")[2]
 	poly_coeffs = map( Integer, str(filter(lambda c: c in "-0123456789,",poly_coeffs_str)).split(",") )
@@ -36,8 +31,11 @@ def pump_out_fields_in_range( dlow, dhigh ):
 		K = parse_numberfield( line )
 		CG = K.class_group(proof=False) # NOTE THIS.
 		elem_divisors = CG.elementary_divisors()
-		elem_divisors_factored = flatten(map( factor, elem_divisors )) 
-		elem_divisors_sorted = sorted(elem_divisors_factored)
+		elem_divisors_factored = map( lambda f: list(factor(f)), elem_divisors )
+		elem_factors = []
+		for l in elem_divisors_factored:
+			elem_factors += l
+		elem_divisors_sorted = sorted(elem_factors)
 		prime_power_list = map( lambda (p,power): p^power, elem_divisors_sorted )
 		outfile.write( "{oldstuff}:{class_group}\n".format( oldstuff=line, class_group=prime_power_list ) )
 	outfile.close()
@@ -54,5 +52,7 @@ partitions = get_disc_partitions( START, END, PART_SIZE )
 args_gen = itertools.imap( lambda (l,h): (l,h), partitions )
 
 for _ignore1 in pump_out_fields_in_range( list(args_gen) ):
-	print(_ignore1)
+	_ignore2 = _ignore1[0]
+	args = _ignore2[0]
+	print("Finished [{dlow},{dhigh}]".format(dlow=args[0],dhigh=args[1]))
 
