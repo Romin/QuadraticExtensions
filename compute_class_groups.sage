@@ -28,16 +28,23 @@ def pump_out_fields_in_range( dlow, dhigh ):
 	outfile = open( outfile_name, 'w' )
 	for line in infile:
 		line = line.strip()
-		K = parse_numberfield( line )
-		CG = K.class_group(proof=False) # NOTE THIS.
-		elem_divisors = CG.elementary_divisors()
-		elem_divisors_factored = map( lambda f: list(factor(f)), elem_divisors )
-		elem_factors = []
-		for l in elem_divisors_factored:
-			elem_factors += l
-		elem_divisors_sorted = sorted(elem_factors)
-		prime_power_list = map( lambda (p,power): p^power, elem_divisors_sorted )
-		outfile.write( "{oldstuff}:{class_group}\n".format( oldstuff=line, class_group=prime_power_list ) )
+		# Ensure line isn't an error line
+		if "ERROR" in line:
+			outfile.write( "{oldstuff}:ERROR:COULD NOT COMPUTE CLASS GROUP\n".format(oldstuff=line) )
+			continue
+		try:
+			K = parse_numberfield( line )
+			CG = K.class_group(proof=False) # NOTE THIS.
+			elem_divisors = CG.elementary_divisors()
+			elem_divisors_factored = map( lambda f: list(factor(f)), elem_divisors )
+			elem_factors = []
+			for l in elem_divisors_factored:
+				elem_factors += l
+			elem_divisors_sorted = sorted(elem_factors)
+			prime_power_list = map( lambda (p,power): p^power, elem_divisors_sorted )
+			outfile.write( "{oldstuff}:{class_group}\n".format( oldstuff=line, class_group=prime_power_list ) )
+		except Exception as e:
+			outfile.write( "{oldstuff}:ERROR:{msg}\n".format(oldstuff=line, msg=e) )
 	outfile.close()
 	infile.close()
 	return
