@@ -228,17 +228,23 @@ def pump_out_fields_in_range( dlow, dhigh, L, L_precomps ):
 	outfile = open( "{dlow}-{dhigh}.polys.lst".format(dlow=dlow,dhigh=dhigh), 'w' )
 	for D_part in xrange( dlow, dhigh ):
 		D = D_part * precomps["discriminant"]^2
-		for m, K in generate_quadexts_withD( L, precomps, D ):
-			p = K.absolute_polynomial()
-			line = "{D}:{m}:{coefficients}".format( D=D, m=m, coefficients=p.coeffs() )
-			outfile.write( line+"\n" )
+		try:
+			for m, K in generate_quadexts_withD( L, precomps, D ):
+				try:
+					p = K.absolute_polynomial()
+					line = "{D}:{m}:{coefficients}".format( D=D, m=m, coefficients=p.coeffs() )
+				except Exception as e:
+					line = "{D}:{m}:ERROR:\"{msg}\"".format(D=D,m=m,msg=e)
+				outfile.write( line+"\n" )
+		except Exception as e:
+			outfile.write( "{D}:ERROR:\"{msg}\"\n".format(D=D,msg=e) )
 	outfile.close()
 	return
 
 def get_disc_partitions( low, high, size ):
 	n_parts = (high - low + size - 1)/size # ceil((high - low)/size)
 	for i in xrange( n_parts ):
-		z = min( high, (i+1)*size )
+		z = min( high, low + (i+1)*size - 1 )
 		yield (low + i*size, z)
 
 os.chdir( OUTDIR )
