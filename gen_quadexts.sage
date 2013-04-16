@@ -8,7 +8,7 @@
 # implemented; the non-Galois case is not yet implemented.
 
 import itertools
-import os
+import os, sys
 
 # Sage has QQ, but that doesn't have NumberField capabilities, so this serves
 # as our canonical field of rationals.
@@ -82,7 +82,7 @@ def precomputations( L, verify=True ):
 	, "squares_mod4"       : mod4_squares
 	}
 
-def partition_range( S, n ):
+def integer_partition_range( S, n ):
 	"""
 	Uniquely generate all lists `lst' with the property that sum(lst)=S and
 	len(lst) = n and x in S implies x >= 0.
@@ -96,10 +96,10 @@ def partition_range( S, n ):
 	else:
 		for i in xrange(S+1):
 			prefix = [i]
-			for suffix in partition_range(S-i, n-1):
+			for suffix in integer_partition_range(S-i, n-1):
 				yield prefix + suffix
 
-def partition_range_maxk( S, n, k ):
+def integer_partition_range_maxk( S, n, k ):
 	"""
 	A variant of partition_range which has useful optimizations for this program.
 
@@ -124,7 +124,7 @@ def partition_range_maxk( S, n, k ):
 		minm_i = max( S - (n-1)*k, 0 )
 		for i in xrange( minm_i, min(S,k)+1 ):
 			prefix = [i]
-			for suffix in partition_range_maxk( S-i, n-1, k ):
+			for suffix in integer_partition_range_maxk( S-i, n-1, k ):
 				yield prefix + suffix
 
 def invert_norm( in_factors, L, L_precomp ):
@@ -167,7 +167,7 @@ def invert_norm( in_factors, L, L_precomp ):
 			# square-free ideal.
 			return
 		for other_factors in invert_norm( in_factors[1:], L, L_precomp ):
-			for exponents in partition_range_maxk( downstairs_power/residue_class_degree, len(upstairs_ideals), 1 ):
+			for exponents in integer_partition_range_maxk( downstairs_power/residue_class_degree, len(upstairs_ideals), 1 ):
 				this_factor = Factorization( zip(upstairs_ideals, exponents) )
 				yield this_factor * other_factors
 	else:
@@ -224,9 +224,11 @@ def generate_quadexts_withD( L, L_precomp, D ):
 	return
 
 @parallel
-def pump_out_fields_in_range( dlow, dhigh, L, L_precomps ):
-	outfile = open( "{dlow}-{dhigh}.polys.lst".format(dlow=dlow,dhigh=dhigh), 'w' )
-	for D_part in xrange( dlow, dhigh ):
+def pump_out_fields( bounds, L, L_precomps ):
+	bounds_str = "{low}-{high}".format(low=bounds[0], high=bounds[1])
+	outfile = open( "{partition_id}.polys.lst".format(partition_id=bounds_str), 'w' )
+	D_part = bounds[0]
+	while D_part <= bounds[1]:
 		D = D_part * precomps["discriminant"]^2
 		try:
 			for m, K in generate_quadexts_withD( L, precomps, D ):
@@ -238,10 +240,11 @@ def pump_out_fields_in_range( dlow, dhigh, L, L_precomps ):
 				outfile.write( line+"\n" )
 		except Exception as e:
 			outfile.write( "{D}:ERROR:\"{msg}\"\n".format(D=D,msg=e) )
+		D_part += 1
 	outfile.close()
 	return
 
-def get_disc_partitions( low, high, size ):
+def get_partitions( low, high, size ):
 	n_parts = (high - low + size - 1)/size # ceil((high - low)/size)
 	for i in xrange( n_parts ):
 		z = min( high, low + (i+1)*size - 1 )
@@ -249,12 +252,13 @@ def get_disc_partitions( low, high, size ):
 
 os.chdir( OUTDIR )
 
-partitions = get_disc_partitions( START, END, PART_SIZE )
-args_gen = itertools.imap( lambda (l,h): (l,h,L,precomps), partitions )
-
+print("Beginning precomputations on L...")
 precomps = precomputations(L)
 
-for args, _ignore in pump_out_fields_in_range( list(args_gen) ):
+print("Generating number fields...")
+arg_list = list(map( lambda bounds: (bounds, L, precomps), get_partitions(START, END, PART_SIZE) ))
+for args, _ignore in pump_out_fields( arg_list ):
 	args = args[0] # don't want keyword args
-	print("Finished range [{low},{high}]".format(low=args[0], high=args[1]))
+	bounds = args[0]
+	print("Finished range [{low},{high}]".format(low=bounds[0], high=bounds[1]))
 
