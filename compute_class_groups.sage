@@ -52,7 +52,7 @@ def pump_out_fields_in_range( dlow, dhigh ):
 def get_disc_partitions( low, high, size ):
 	n_parts = (high - low + size - 1)/size # ceil((high - low)/size)
 	for i in xrange( n_parts ):
-		z = min( high, (i+1)*size )
+		z = min( high, low + (i+1)*size - 1 )
 		yield (low + i*size, z)
 
 partitions = get_disc_partitions( START, END, PART_SIZE )
