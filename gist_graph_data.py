@@ -62,6 +62,6 @@ for partition in partitions:
 	for k in ppart:
 		total += ppart[k]
 	this_stat = ppart.get(THE_class,0)
-	percent = float(this_stat)/float(total)
+	percent = 100.0*float(this_stat)/float(total)
 	print( "{disc_bound} {percent} {count}".format(disc_bound=partition[1], percent=percent, count=this_stat) )
 
