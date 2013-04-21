@@ -2,8 +2,7 @@ import itertools
 import os
 import sys
 
-#INDIR     = os.path.join( os.getcwd(), "Q_zeta9" )
-INDIR     = os.path.join( os.getcwd(), "Q_zeta9-first_run" )
+INDIR     = os.path.join( os.getcwd(), "Q_zeta9" )
 PART_SIZE = 10**4
 START     = 10**0
 END       = 10**8
