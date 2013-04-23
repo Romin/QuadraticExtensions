@@ -21,30 +21,60 @@ PART_SIZE = 10^4
 START     = 10^0
 END       = 10^8
 
-def precomputations( L, verify=True ):
+NCPUS     = None # None is the default
+
+def precomputations( L, **kwargs ):
 	"""
 	We need to know a few things about L that we can precompute before
 	enumerating fields. This function does those computations, and returns a
 	dictionary keyed by strings with those values, as follows:
-	{ "discriminant"       : Absolute discriminant of L
-	, "is_galois"          : Boolean that is true iff L is galois
-	, "unit_adjusts"       : A collection of units of O_L which correspond
-													 bijectively with the cosets of the 2-torsion of the
-													 units of O_L.
-	, "mod4"               : The ring O_L / 4O_L
-	, "squares_mod4"       : The set of elements x^2 where x is in O_L / 4O_L.
+	{ "discriminant"          : Absolute discriminant of L
+	, "is_galois"             : Boolean that is true iff L is galois
+	, "unit_adjusts"          : A collection of units of O_L which correspond
+	                            bijectively with the cosets of the 2-torsion of the
+	                            units of O_L.
+	, "mod4"                  : The ring O_L / 4O_L
+	, "squares_mod4"          : The set of elements x^2 where x is in O_L / 4O_L.
+	, "prime_splits"          : A map of primes of Q to information on their factoring in L.
+	                            p -> [(q_i, e_i, f_i)] where p = prod(q_i^e_i) and
+	                            q_i.norm() = p^f_i
+															upper_bound must be specified for this
+															precomputation to occur. p <= upper_bound are
+															computed.
+	, "norms"                 : A list of integers up to upper_bound from
+															norms_file which are norms of ideals of O_L.
+															Both upper_bound and norms_file must be specified
+															for this precomputation to occur.
 	}
+
+	Keyword parameters:
+
+	upper_bound is a positive integer which is an upper bound on lists of numbers
+	which are computed.
+	If upper_bound is None, then none of the precomputations which require
+	upper_bound will occur.
+
+	norms_file is a string which is a filename which refers to a file containing
+	a list, one element per line, of positive integers which are absolute values
+	of norms of ideals of L.
+	If norms_file is None, then precomputations relying on norms_file will not
+	occur.
 	
-	Also, if verify is True, then L is verified to have class number 1. If it
-	does not, None is returned instead of the above dictionary.
+	verify is a boolean which, when True, includes a precomputation in which L is
+	verified to have class number 1. If L does not have class number 1, an
+	exception is raised.
 	If verify is false, then L is *not* verified to have class number 1, and the
 	results of this are undefined when L does not have class number 1.
 	"""
-	if verify:
+	if kwargs.get("verify",True):
+		print("\tVerifying L has class number 1 ...")
 		if L.class_number() != 1:
-			return None
+			raise Exception("L does not have class number 1.")
+	print("\tComputing L's discriminant...")
 	D = L.discriminant()
+	print("\tComputing if L is Galois...")
 	is_galois = L.is_galois()
+	print("\tComputing unit adjusts...")
 	U_L = L.unit_group()
 	ngens = U_L.ngens()
 	unit_adjust_vectors = [[]]
@@ -53,6 +83,7 @@ def precomputations( L, verify=True ):
 		next_adjust_vectors += map( lambda v: [1] + v, unit_adjust_vectors )
 		unit_adjust_vectors = next_adjust_vectors
 	unit_adjusts = map( U_L.exp, unit_adjust_vectors )
+	print("\tComputing squares mod 4O_L...")
 	# TODO: This method of creating a set of all squares mod 4 could probably be
 	# improved.
 	# For example, with L=Q(zeta9), mod4_elt_vectors gets to size 4096, but
@@ -74,12 +105,57 @@ def precomputations( L, verify=True ):
 	superpaired = itertools.starmap( zip, paired )
 	mod4_elts = itertools.imap( lambda elts: sum(map(prod,elts)), superpaired )
 	mod4_squares = Set( [O_L_4O_L(a*a) for a in mod4_elts] )
+	prime_splits = {}
+	if kwargs.get("upper_bound",None) is not None:
+		print("\tComputing prime splitting information...")
+		upper_bound = kwargs["upper_bound"]
+		primes_list = prime_range(upper_bound+1)
+		primes_list_list = []
+		part_size=10^3
+		n_parts = (len(primes_list)/part_size).ceil()
+		for i in range( n_parts ):
+			if i == n_parts-1:
+				primes_list_list.append( primes_list[i*part_size:] )
+			else:
+				primes_list_list.append( primes_list[i*part_size:(i+1)*part_size] )
+		@parallel(ncpus=NCPUS)
+		def gen_prime_info( primes_list ):
+			prime_splits = {}
+			for p in primes_list:
+				up = L(p)
+				up_factored = up.factor()
+				if is_galois:
+					f = lambda q: L.ideal(up_factored[0][0]).residue_class_degree() # constant function
+				else:
+					f = lambda q: L.ideal(q).residue_class_degree()
+				prime_splits[p] = [(q_i, e_i, f(q_i)) for (q_i, e_i) in up_factored]
+			return prime_splits
+		for args, result in gen_prime_info(primes_list_list):
+			for k in result:
+				prime_splits[k] = result[k]
+	norms = []
+	if kwargs.get("upper_bound",None) is not None and kwargs.get("norms_file",None) is not None:
+		upper_bound = kwargs["upper_bound"]
+		norms_filename = kwargs["norms_file"]
+		print("\tReading norms from \"{norms_file}\"".format(norms_file=norms_filename))
+		norms_file = open( norms_filename, 'r' )
+		for line in norms_file:
+			try:
+				norm = Integer(line.strip()) # Pray there are no leading zeroes.
+			except:
+				continue
+			if norm > upper_bound:
+				break
+			norms.append( norm )
+		norms_file.close()
 	return \
 	{ "discriminant"       : D
 	, "is_galois"          : is_galois
 	, "unit_adjusts"       : unit_adjusts
 	, "mod4"               : O_L_4O_L
 	, "squares_mod4"       : mod4_squares
+	, "prime_splits"       : prime_splits
+	, "norms"              : norms
 	}
 
 def integer_partition_range( S, n ):
@@ -149,26 +225,42 @@ def invert_norm( in_factors, L, L_precomp ):
 		partition_range.
 	- the non-galois case is not implemented, since we're only interested in
 		Q(z_9), which is galois.
+	- ideal generators are used in lieu of actual ideals, since we're only
+		interesting in L which have trivial class group/are PIDs.
 	"""
 	if len( in_factors ) == 0:
 		yield Factorization([])
 		return
-	downstairs_ideal, downstairs_power = in_factors[0]
-	upstairs_factorization = L.fractional_ideal(downstairs_ideal.gens()).factor()
-	upstairs_ideals = map( lambda (ideal, power): ideal, upstairs_factorization )
+	#downstairs_ideal, downstairs_power = in_factors[0]
+	downstairs_ideal_gen, downstairs_power = in_factors[0]
+	#upstairs_factorization = L.fractional_ideal(downstairs_ideal.gens()).factor()
+	#upstairs_ideals = map( lambda (ideal, power): ideal, upstairs_factorization )
+	upstairs_factorization_info = L_precomp.get("prime_splits",{}).get(downstairs_ideal_gen,None)
+	if upstairs_factorization_info is None:
+		upstairs_factorization = L(downstairs_ideal_gen).factor()
+		if L_precomp["is_galois"]:
+			f_p = L.ideal(upstairs_factorization[0][0]).residue_class_degree()
+			f = lambda q: f_p # constant function
+		else:
+			f = lambda q: L.ideal(q).residue_class_degree()
+		upstairs_factorization_info = [ (q,e,f(q)) for (q,e) in upstairs_factorization ]
+	upstairs_ideal_gens = [ q for (q,e,f) in upstairs_factorization_info ]
 	if L_precomp["is_galois"]:
-		residue_class_degree = upstairs_ideals[0].residue_class_degree()
+		#residue_class_degree = upstairs_ideals[0].residue_class_degree()
+		residue_class_degree = upstairs_factorization_info[0][2]
 		if not residue_class_degree.divides( downstairs_power ):
 			return
 		# The 1 here is the `k' argument to partition_range_maxk
-		if downstairs_power/residue_class_degree > len(upstairs_ideals)*1:
+		#if downstairs_power/residue_class_degree > len(upstairs_ideals)*1:
+		if downstairs_power/residue_class_degree > len(upstairs_ideal_gens)*1:
 			# We'd pass invalid arguments to partition_range_maxk.
 			# Plus the pigeon-hole principle guarantees that we cannot have a
 			# square-free ideal.
 			return
 		for other_factors in invert_norm( in_factors[1:], L, L_precomp ):
-			for exponents in integer_partition_range_maxk( downstairs_power/residue_class_degree, len(upstairs_ideals), 1 ):
-				this_factor = Factorization( zip(upstairs_ideals, exponents) )
+			for exponents in integer_partition_range_maxk( downstairs_power/residue_class_degree, len(upstairs_ideal_gens), 1 ):
+				#this_factor = Factorization( zip(upstairs_ideals, exponents) )
+				this_factor = Factorization( zip(upstairs_ideal_gens, exponents) )
 				yield this_factor * other_factors
 	else:
 		raise NotImplementedError("Currently only L which are Galois are supported by invert_norm.")
@@ -185,31 +277,39 @@ def generate_quadexts_withD( L, L_precomp, D ):
 	"""
 	enumerate every quadratic extension of L (via L_precomp) with absolute value
 	of the absolute discriminant equal to D exactly once.
+
+	the commented lines are to reflect a modification of invert_norm so that it
+	works on ideal *generators* rather than ideals, for speed purposes.
 	"""
 	if gcd( L_precomp["discriminant"]^2, D ) != L_precomp["discriminant"]^2:
 		return
 	N = D/(L_precomp["discriminant"]^2)
-	NI = Q.fractional_ideal(N)
+	#NI = Q.fractional_ideal(N)
 	R.<z> = PolynomialRing(L)
-	generator = invert_norm( list(NI.factor()), L, L_precomp )
+	#generator = invert_norm( list(NI.factor()), L, L_precomp )
+	generator = invert_norm( list(N.factor()), L, L_precomp )
 	# The flag here being True indicates that the ideals in the associated
 	# generator will have the 4 pulled out of them.
 	flag_and_gens = [ (False, generator) ]
 	if gcd( L(4).norm(), N ) == L(4).norm():
-		NI4 = Q.fractional_ideal( N / (L(4).norm()) )
-		generator = invert_norm( list(NI4.factor()), L, L_precomp )
+		N4 = N / (L(4).norm())
+		#NI4 = Q.fractional_ideal( N4 )
+		#generator = invert_norm( list(NI4.factor()), L, L_precomp )
+		generator = invert_norm( list(N4.factor()), L, L_precomp )
 		flag_and_gens.append( (True, generator) )
 	for flag, generator in flag_and_gens:
-		for relative_discriminant_factorization in generator:
-			relative_discriminant_factorization = list(relative_discriminant_factorization)
+		#for relative_discriminant_factorization in generator:
+		for relative_discriminant_gen_factorization in generator:
 			base_gen = None
-			if len(relative_discriminant_factorization) == 0:
+			#if len(relative_discriminant_factorization) == 0:
+			if len(relative_discriminant_gen_factorization) == 0:
 				# Pick 1 as the generator to simplify the filtering of square units
 				# later. (1 will be the only potential square unit.)
 				base_gen = L(1)
 			else:
-				relative_discriminant = Factorization(relative_discriminant_factorization).expand()
-				base_gen = relative_discriminant.gens_reduced()[0]
+				#relative_discriminant = relative_discriminant_factorization.expand()
+				#base_gen = relative_discriminant.gens_reduced()[0]
+				base_gen = relative_discriminant_gen_factorization.expand()
 			for numbfld_gen in expand_unit_adjusts( base_gen, L_precomp["unit_adjusts"] ):
 				if numbfld_gen == L(1):
 					continue
@@ -223,7 +323,7 @@ def generate_quadexts_withD( L, L_precomp, D ):
 				yield numbfld_gen, L.extension( z^2 - numbfld_gen, 'm' )
 	return
 
-@parallel
+@parallel(ncpus=NCPUS)
 def pump_out_fields( bounds, L, L_precomps ):
 	bounds_str = "{low}-{high}".format(low=bounds[0], high=bounds[1])
 	outfile = open( "{partition_id}.polys.lst".format(partition_id=bounds_str), 'w' )
@@ -253,7 +353,7 @@ def get_partitions( low, high, size ):
 os.chdir( OUTDIR )
 
 print("Beginning precomputations on L...")
-precomps = precomputations(L)
+precomps = precomputations(L, upper_bound=END)
 
 print("Generating number fields...")
 arg_list = list(map( lambda bounds: (bounds, L, precomps), get_partitions(START, END, PART_SIZE) ))
