@@ -9,19 +9,30 @@
 
 import itertools
 import os, sys
+import time
 
 # Sage has QQ, but that doesn't have NumberField capabilities, so this serves
 # as our canonical field of rationals.
 Q = NumberField(x,'a')
+R.<y> = PolynomialRing(Q)
 
 # The parameters of this computation
 OUTDIR    = os.path.join( os.getcwd(), "Q_zeta9" )
 L.<zeta9> = NumberField(x^6 + x^3 + 1)
 PART_SIZE = 10^4
-START     = 10^0
-END       = 10^8
+START     = 1
+END       = 10^9
 
 NCPUS     = None # None is the default
+
+# Resume
+START = 28500001
+
+# Test
+START = 1 + END - 8*3*PART_SIZE
+
+# Globals that depend on the parameters
+S.<z>     = PolynomialRing(L)
 
 def precomputations( L, **kwargs ):
 	"""
@@ -35,6 +46,8 @@ def precomputations( L, **kwargs ):
 	                            units of O_L.
 	, "mod4"                  : The ring O_L / 4O_L
 	, "squares_mod4"          : The set of elements x^2 where x is in O_L / 4O_L.
+	, "4norm_factored"        : L(4).norm().factor()
+	, "automorphisms"         : A list of all the automorphisms of L.
 	, "prime_splits"          : A map of primes of Q to information on their factoring in L.
 	                            p -> [(q_i, e_i, f_i)] where p = prod(q_i^e_i) and
 	                            q_i.norm() = p^f_i
@@ -105,19 +118,24 @@ def precomputations( L, **kwargs ):
 	superpaired = itertools.starmap( zip, paired )
 	mod4_elts = itertools.imap( lambda elts: sum(map(prod,elts)), superpaired )
 	mod4_squares = Set( [O_L_4O_L(a*a) for a in mod4_elts] )
+	print("\tComputing 4's norm's factorization...")
+	norm4_factored = L(4).norm().factor()
+	print("\tComputing automorphisms...")
+	automorphisms = L.automorphisms()
 	prime_splits = {}
 	if kwargs.get("upper_bound",None) is not None:
 		print("\tComputing prime splitting information...")
-		upper_bound = kwargs["upper_bound"]
+		upper_bound = ceil( sqrt(kwargs["upper_bound"]) ) # Larger primes are unlikely to appear often
 		primes_list = prime_range(upper_bound+1)
 		primes_list_list = []
 		part_size=10^3
-		n_parts = (len(primes_list)/part_size).ceil()
+		n_parts = ceil(len(primes_list)/part_size)
 		for i in range( n_parts ):
 			if i == n_parts-1:
 				primes_list_list.append( primes_list[i*part_size:] )
 			else:
 				primes_list_list.append( primes_list[i*part_size:(i+1)*part_size] )
+		primes_list = None
 		@parallel(ncpus=NCPUS)
 		def gen_prime_info( primes_list ):
 			prime_splits = {}
@@ -125,7 +143,8 @@ def precomputations( L, **kwargs ):
 				up = L(p)
 				up_factored = up.factor()
 				if is_galois:
-					f = lambda q: L.ideal(up_factored[0][0]).residue_class_degree() # constant function
+					residue_class_degree = L.ideal(up_factored[0][0]).residue_class_degree()
+					f = lambda q: residue_class_degree # constant function
 				else:
 					f = lambda q: L.ideal(q).residue_class_degree()
 				prime_splits[p] = [(q_i, e_i, f(q_i)) for (q_i, e_i) in up_factored]
@@ -133,6 +152,7 @@ def precomputations( L, **kwargs ):
 		for args, result in gen_prime_info(primes_list_list):
 			for k in result:
 				prime_splits[k] = result[k]
+			result = None
 	norms = []
 	if kwargs.get("upper_bound",None) is not None and kwargs.get("norms_file",None) is not None:
 		upper_bound = kwargs["upper_bound"]
@@ -154,26 +174,11 @@ def precomputations( L, **kwargs ):
 	, "unit_adjusts"       : unit_adjusts
 	, "mod4"               : O_L_4O_L
 	, "squares_mod4"       : mod4_squares
+	, "4norm_factored"     : norm4_factored
+	, "automorphisms"      : automorphisms
 	, "prime_splits"       : prime_splits
 	, "norms"              : norms
 	}
-
-def integer_partition_range( S, n ):
-	"""
-	Uniquely generate all lists `lst' with the property that sum(lst)=S and
-	len(lst) = n and x in S implies x >= 0.
-
-	I assume n > 0 and S >= 0.
-	"""
-	if n <= 0 or S < 0:
-		raise Exception("partition_range got bad arguments.")
-	if n == 1:
-		yield [S]
-	else:
-		for i in xrange(S+1):
-			prefix = [i]
-			for suffix in integer_partition_range(S-i, n-1):
-				yield prefix + suffix
 
 def integer_partition_range_maxk( S, n, k ):
 	"""
@@ -187,7 +192,7 @@ def integer_partition_range_maxk( S, n, k ):
 	In particular, 0 <= S <= n*k, n > 0, and k > 0.
 	"""
 	if S < 0 or S > n*k or n <= 0 or k < 0:
-		raise Exception("partition_range_maxk got bad arguments: S={S}, n={n}, k={k}".format(S=S,n=n,k=k))
+		return # There are no such `lst'
 	if n == 1:
 		yield [S]
 	else:
@@ -231,27 +236,22 @@ def invert_norm( in_factors, L, L_precomp ):
 	if len( in_factors ) == 0:
 		yield Factorization([])
 		return
-	#downstairs_ideal, downstairs_power = in_factors[0]
 	downstairs_ideal_gen, downstairs_power = in_factors[0]
-	#upstairs_factorization = L.fractional_ideal(downstairs_ideal.gens()).factor()
-	#upstairs_ideals = map( lambda (ideal, power): ideal, upstairs_factorization )
 	upstairs_factorization_info = L_precomp.get("prime_splits",{}).get(downstairs_ideal_gen,None)
 	if upstairs_factorization_info is None:
 		upstairs_factorization = L(downstairs_ideal_gen).factor()
 		if L_precomp["is_galois"]:
 			f_p = L.ideal(upstairs_factorization[0][0]).residue_class_degree()
-			f = lambda q: f_p # constant function
+			upstairs_factorization_info = [ (q,e,f_p) for (q,e) in upstairs_factorization ]
 		else:
 			f = lambda q: L.ideal(q).residue_class_degree()
-		upstairs_factorization_info = [ (q,e,f(q)) for (q,e) in upstairs_factorization ]
+			upstairs_factorization_info = [ (q,e,f(q)) for (q,e) in upstairs_factorization ]
 	upstairs_ideal_gens = [ q for (q,e,f) in upstairs_factorization_info ]
 	if L_precomp["is_galois"]:
-		#residue_class_degree = upstairs_ideals[0].residue_class_degree()
 		residue_class_degree = upstairs_factorization_info[0][2]
 		if not residue_class_degree.divides( downstairs_power ):
 			return
 		# The 1 here is the `k' argument to partition_range_maxk
-		#if downstairs_power/residue_class_degree > len(upstairs_ideals)*1:
 		if downstairs_power/residue_class_degree > len(upstairs_ideal_gens)*1:
 			# We'd pass invalid arguments to partition_range_maxk.
 			# Plus the pigeon-hole principle guarantees that we cannot have a
@@ -259,58 +259,40 @@ def invert_norm( in_factors, L, L_precomp ):
 			return
 		for other_factors in invert_norm( in_factors[1:], L, L_precomp ):
 			for exponents in integer_partition_range_maxk( downstairs_power/residue_class_degree, len(upstairs_ideal_gens), 1 ):
-				#this_factor = Factorization( zip(upstairs_ideals, exponents) )
 				this_factor = Factorization( zip(upstairs_ideal_gens, exponents) )
 				yield this_factor * other_factors
 	else:
 		raise NotImplementedError("Currently only L which are Galois are supported by invert_norm.")
 	return
 
-def expand_unit_adjusts( elt, unit_adjusts ):
-	"""
-	Basically just map( lambda u: u*elt, unit_adjusts ).
-	"""
-	for x in itertools.imap( lambda u: u*elt, unit_adjusts ):
-		yield x
-
-def generate_quadexts_withD( L, L_precomp, D ):
+def generate_quadexts_with_norm( L, L_precomp, norm ):
 	"""
 	enumerate every quadratic extension of L (via L_precomp) with absolute value
-	of the absolute discriminant equal to D exactly once.
-
-	the commented lines are to reflect a modification of invert_norm so that it
-	works on ideal *generators* rather than ideals, for speed purposes.
+	of the norm of the relative discriminant over L equal to norm exactly once.
 	"""
-	if gcd( L_precomp["discriminant"]^2, D ) != L_precomp["discriminant"]^2:
-		return
-	N = D/(L_precomp["discriminant"]^2)
-	#NI = Q.fractional_ideal(N)
-	R.<z> = PolynomialRing(L)
-	#generator = invert_norm( list(NI.factor()), L, L_precomp )
-	generator = invert_norm( list(N.factor()), L, L_precomp )
+	N = norm
+	N_factored = N.factor()
+	generator = invert_norm( list(N_factored), L, L_precomp )
 	# The flag here being True indicates that the ideals in the associated
 	# generator will have the 4 pulled out of them.
 	flag_and_gens = [ (False, generator) ]
-	if gcd( L(4).norm(), N ) == L(4).norm():
-		N4 = N / (L(4).norm())
-		#NI4 = Q.fractional_ideal( N4 )
-		#generator = invert_norm( list(NI4.factor()), L, L_precomp )
-		generator = invert_norm( list(N4.factor()), L, L_precomp )
+	L4norm_factored = L_precomp["4norm_factored"]
+	L4norm = Integer(L4norm_factored.expand())
+	if L4norm.divides(N):
+		N4_factored = N_factored / L4norm_factored
+		generator = invert_norm( list(N4_factored), L, L_precomp )
 		flag_and_gens.append( (True, generator) )
 	for flag, generator in flag_and_gens:
-		#for relative_discriminant_factorization in generator:
 		for relative_discriminant_gen_factorization in generator:
 			base_gen = None
-			#if len(relative_discriminant_factorization) == 0:
 			if len(relative_discriminant_gen_factorization) == 0:
 				# Pick 1 as the generator to simplify the filtering of square units
 				# later. (1 will be the only potential square unit.)
 				base_gen = L(1)
 			else:
-				#relative_discriminant = relative_discriminant_factorization.expand()
-				#base_gen = relative_discriminant.gens_reduced()[0]
 				base_gen = relative_discriminant_gen_factorization.expand()
-			for numbfld_gen in expand_unit_adjusts( base_gen, L_precomp["unit_adjusts"] ):
+			numbfld_gens = [base_gen*u for u in L_precomp["unit_adjusts"]]
+			for numbfld_gen in numbfld_gens:
 				if numbfld_gen == L(1):
 					continue
 				numbfld_gen_mod4 = L_precomp["mod4"]( numbfld_gen )
@@ -320,45 +302,64 @@ def generate_quadexts_withD( L, L_precomp, D ):
 				else: # We want numbfld_gen _IS_ a square mod 4
 					if numbfld_gen_mod4 not in L_precomp["squares_mod4"]:
 						continue
-				yield numbfld_gen, L.extension( z^2 - numbfld_gen, 'm' )
+				#abs_poly = R(prod( z^2 - aut(numbfld_gen) for aut in L_precomp["automorphisms"] ))
+				abs_poly = numbfld_gen.minpoly()(x^2)
+				yield numbfld_gen, abs_poly
 	return
 
 @parallel(ncpus=NCPUS)
-def pump_out_fields( bounds, L, L_precomps ):
+def pump_out_fields( bounds, norms, L, L_precomps ):
 	bounds_str = "{low}-{high}".format(low=bounds[0], high=bounds[1])
 	outfile = open( "{partition_id}.polys.lst".format(partition_id=bounds_str), 'w' )
-	D_part = bounds[0]
-	while D_part <= bounds[1]:
-		D = D_part * precomps["discriminant"]^2
+	for norm in norms:
+		D = norm * precomps["discriminant"]^2
 		try:
-			for m, K in generate_quadexts_withD( L, precomps, D ):
-				try:
-					p = K.absolute_polynomial()
-					line = "{D}:{m}:{coefficients}".format( D=D, m=m, coefficients=p.coeffs() )
-				except Exception as e:
-					line = "{D}:{m}:ERROR:\"{msg}\"".format(D=D,m=m,msg=e)
+			for m, abs_poly in generate_quadexts_with_norm( L, precomps, norm ):
+				line = "{D}:{m}:{coefficients}".format( D=D, m=m, coefficients=abs_poly.coeffs() )
 				outfile.write( line+"\n" )
 		except Exception as e:
 			outfile.write( "{D}:ERROR:\"{msg}\"\n".format(D=D,msg=e) )
-		D_part += 1
 	outfile.close()
 	return
 
 def get_partitions( low, high, size ):
-	n_parts = (high - low + size - 1)/size # ceil((high - low)/size)
+	n_parts = ceil( (high - low)/size )
 	for i in xrange( n_parts ):
 		z = min( high, low + (i+1)*size - 1 )
 		yield (low + i*size, z)
 
+def get_partitioned_norms( norms, partition_bounds ):
+	partitions = {}
+	for bound in partition_bounds:
+		partitions[bound] = []
+	i = 0
+	j = 0
+	while i < len(norms) and j < len(partition_bounds):
+		norm = norms[i]
+		bound = partition_bounds[j]
+		if norm > bound[1]:
+			j += 1
+		elif norm < bound[0]:
+			i += 1
+		else:
+			partitions[bound].append(norm)
+			i += 1
+	return [partitions[bound] for bound in partition_bounds]
+
 os.chdir( OUTDIR )
 
 print("Beginning precomputations on L...")
-precomps = precomputations(L, upper_bound=END)
+precomps = precomputations(L, upper_bound=END, norms_file="norms.lst")
+
+partitions = list(get_partitions(START, END, PART_SIZE))
+partitioned_norms = get_partitioned_norms( precomps["norms"], partitions )
+
+arg_list = [(bounds, norms_part, L, precomps) for (bounds, norms_part) in zip(partitions, partitioned_norms)]
 
 print("Generating number fields...")
-arg_list = list(map( lambda bounds: (bounds, L, precomps), get_partitions(START, END, PART_SIZE) ))
 for args, _ignore in pump_out_fields( arg_list ):
 	args = args[0] # don't want keyword args
 	bounds = args[0]
-	print("Finished range [{low},{high}]".format(low=bounds[0], high=bounds[1]))
+	norms = args[1]
+	print("Finished range [{low},{high}] ({n_norms} norms)".format(low=bounds[0], high=bounds[1], n_norms=len(norms)))
 
