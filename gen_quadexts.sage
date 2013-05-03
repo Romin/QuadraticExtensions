@@ -25,12 +25,6 @@ END       = 10^9
 
 NCPUS     = None # None is the default
 
-# Resume
-START = 28500001
-
-# Test
-START = 1 + END - 8*3*PART_SIZE
-
 # Globals that depend on the parameters
 S.<z>     = PolynomialRing(L)
 
@@ -44,10 +38,11 @@ def precomputations( L, **kwargs ):
 	, "unit_adjusts"          : A collection of units of O_L which correspond
 	                            bijectively with the cosets of the 2-torsion of the
 	                            units of O_L.
-	, "mod4"                  : The ring O_L / 4O_L
-	, "squares_mod4"          : The set of elements x^2 where x is in O_L / 4O_L.
-	, "4norm_factored"        : L(4).norm().factor()
-	, "automorphisms"         : A list of all the automorphisms of L.
+	, "mod4_elts"             : Representatives of every coset of O_L / 4O_L
+	, "unit_to_squaremod4"    : A function mapping x in O_L to u, a unit of O_L,
+	                            so that x*u is a square mod 4, or None if no such unit
+	                            exists.
+	, "4norm"                 : L(4).norm()
 	, "prime_splits"          : A map of primes of Q to information on their factoring in L.
 	                            p -> [(q_i, e_i, f_i)] where p = prod(q_i^e_i) and
 	                            q_i.norm() = p^f_i
@@ -89,6 +84,7 @@ def precomputations( L, **kwargs ):
 	is_galois = L.is_galois()
 	print("\tComputing unit adjusts...")
 	U_L = L.unit_group()
+	O_L = L.ring_of_integers()
 	ngens = U_L.ngens()
 	unit_adjust_vectors = [[]]
 	for i in range(ngens):
@@ -96,16 +92,14 @@ def precomputations( L, **kwargs ):
 		next_adjust_vectors += map( lambda v: [1] + v, unit_adjust_vectors )
 		unit_adjust_vectors = next_adjust_vectors
 	unit_adjusts = map( U_L.exp, unit_adjust_vectors )
+	unit_adjusts = [ O_L(u) for u in unit_adjusts ]
 	print("\tComputing squares mod 4O_L...")
 	# TODO: This method of creating a set of all squares mod 4 could probably be
 	# improved.
 	# For example, with L=Q(zeta9), mod4_elt_vectors gets to size 4096, but
 	# mod4_squares has size only 64.
-	# Would it be sufficient to generate the vectors with just 0, 1 as
-	# coordinates rather than 0, 1, 2, 3? And then eliminate the Set
-	# functionality, etc.?
-	# (Since 0^2, 1^2 are all the squares in Z/4Z.)
-	O_L = L.ring_of_integers()
+	# It seems to be the case that a lifting of elements of O_L/2O_L to O_L/4O_L
+	# will give us precisely the squares mod 4O_L.
 	O_L_4O_L = O_L.quotient( O_L.ideal(4), 'q' )
 	basis = O_L.basis()
 	mod4_elt_vectors = [[]]
@@ -116,12 +110,27 @@ def precomputations( L, **kwargs ):
 		mod4_elt_vectors = next_elt_vectors
 	paired = itertools.izip( mod4_elt_vectors, itertools.repeat(basis) )
 	superpaired = itertools.starmap( zip, paired )
-	mod4_elts = itertools.imap( lambda elts: sum(map(prod,elts)), superpaired )
+	mod4_elts = list(itertools.imap(lambda elts: sum(map(prod,elts)),superpaired))
 	mod4_squares = Set( [O_L_4O_L(a*a) for a in mod4_elts] )
-	print("\tComputing 4's norm's factorization...")
-	norm4_factored = L(4).norm().factor()
-	print("\tComputing automorphisms...")
-	automorphisms = L.automorphisms()
+	print("\tComputing unit-adjust-to-square-mod-4 hash table...")
+	def idx( x ):
+		coords = x.list()
+		coords = reversed(coords)
+		coords = [ c % 4 for c in coords ]
+		index = 0
+		for c in coords:
+			index *= 4
+			index += c
+		return index
+	unit_to_squaremod4_hashtable = [None for elt in mod4_elts]
+	for elt in mod4_elts:
+		for u in unit_adjusts:
+			if O_L_4O_L(elt*u) in mod4_squares:
+				unit_to_squaremod4_hashtable[idx(elt)] = u
+	def unit_to_squaremod4( x ): # Closures are wonderful, wonderful things.
+		return unit_to_squaremod4_hashtable[idx(x)]
+	print("\tComputing 4's norm...")
+	norm4 = L(4).norm()
 	prime_splits = {}
 	if kwargs.get("upper_bound",None) is not None:
 		print("\tComputing prime splitting information...")
@@ -172,10 +181,9 @@ def precomputations( L, **kwargs ):
 	{ "discriminant"       : D
 	, "is_galois"          : is_galois
 	, "unit_adjusts"       : unit_adjusts
-	, "mod4"               : O_L_4O_L
-	, "squares_mod4"       : mod4_squares
-	, "4norm_factored"     : norm4_factored
-	, "automorphisms"      : automorphisms
+	, "mod4_elts"          : mod4_elts
+	, "unit_to_squaremod4" : unit_to_squaremod4
+	, "4norm"              : norm4
 	, "prime_splits"       : prime_splits
 	, "norms"              : norms
 	}
@@ -272,39 +280,34 @@ def generate_quadexts_with_norm( L, L_precomp, norm ):
 	"""
 	N = norm
 	N_factored = N.factor()
-	generator = invert_norm( list(N_factored), L, L_precomp )
-	# The flag here being True indicates that the ideals in the associated
-	# generator will have the 4 pulled out of them.
-	flag_and_gens = [ (False, generator) ]
-	L4norm_factored = L_precomp["4norm_factored"]
-	L4norm = Integer(L4norm_factored.expand())
-	if L4norm.divides(N):
-		N4_factored = N_factored / L4norm_factored
-		generator = invert_norm( list(N4_factored), L, L_precomp )
-		flag_and_gens.append( (True, generator) )
-	for flag, generator in flag_and_gens:
-		for relative_discriminant_gen_factorization in generator:
-			base_gen = None
-			if len(relative_discriminant_gen_factorization) == 0:
-				# Pick 1 as the generator to simplify the filtering of square units
-				# later. (1 will be the only potential square unit.)
-				base_gen = L(1)
-			else:
-				base_gen = relative_discriminant_gen_factorization.expand()
-			numbfld_gens = [base_gen*u for u in L_precomp["unit_adjusts"]]
-			for numbfld_gen in numbfld_gens:
-				if numbfld_gen == L(1):
-					continue
-				numbfld_gen_mod4 = L_precomp["mod4"]( numbfld_gen )
-				if flag: # We want numbfld_gen _IS_NOT_ a square mod 4
-					if numbfld_gen_mod4 in L_precomp["squares_mod4"]:
-						continue
-				else: # We want numbfld_gen _IS_ a square mod 4
-					if numbfld_gen_mod4 not in L_precomp["squares_mod4"]:
-						continue
-				#abs_poly = R(prod( z^2 - aut(numbfld_gen) for aut in L_precomp["automorphisms"] ))
-				abs_poly = numbfld_gen.minpoly()(x^2)
-				yield numbfld_gen, abs_poly
+	danger_zone = False
+	if norm > L_precomp["upper_bound"] / L_precomp["4norm"]:
+		danger_zone = True
+	if danger_zone:
+		if norm % 4 != 1:
+			# There won't be anything that we're interested in.
+			return
+	for relative_discriminant_gen_factorization in invert_norm( list(N_factored), L, L_precomp ):
+		base_gen = None
+		if len(relative_discriminant_gen_factorization) == 0:
+			# Pick 1 as the generator to simplify the filtering of square units
+			# later. (1 will be the only potential square unit.)
+			base_gen = L(1)
+		else:
+			base_gen = relative_discriminant_gen_factorization.expand()
+		unit_adjusts = []
+		if danger_zone:
+			unit_adjust = L_precomp["unit_to_squaremod4"]( base_gen )
+			if unit_adjust is not None:
+				unit_adjusts = [unit_adjust]
+		else:
+			unit_adjusts = L_precomp["unit_adjusts"]
+		for unit in unit_adjusts:
+			numbfld_gen = unit*base_gen
+			if numbfld_gen == L(1):
+				continue
+			abs_poly = numbfld_gen.minpoly()(x^2)
+			yield numbfld_gen, abs_poly
 	return
 
 @parallel(ncpus=NCPUS)
@@ -315,10 +318,10 @@ def pump_out_fields( bounds, norms, L, L_precomps ):
 		D = norm * precomps["discriminant"]^2
 		try:
 			for m, abs_poly in generate_quadexts_with_norm( L, precomps, norm ):
-				line = "{D}:{m}:{coefficients}".format( D=D, m=m, coefficients=abs_poly.coeffs() )
+				line = "{norm}:{m}:{coefficients}".format( norm=norm, m=m, coefficients=abs_poly.coeffs() )
 				outfile.write( line+"\n" )
 		except Exception as e:
-			outfile.write( "{D}:ERROR:\"{msg}\"\n".format(D=D,msg=e) )
+			outfile.write( "{norm}:ERROR:\"{msg}\"\n".format(norm=norm,msg=e) )
 	outfile.close()
 	return
 
@@ -351,15 +354,19 @@ os.chdir( OUTDIR )
 print("Beginning precomputations on L...")
 precomps = precomputations(L, upper_bound=END, norms_file="norms.lst")
 
+precomps["upper_bound"] = END
+
 partitions = list(get_partitions(START, END, PART_SIZE))
 partitioned_norms = get_partitioned_norms( precomps["norms"], partitions )
 
 arg_list = [(bounds, norms_part, L, precomps) for (bounds, norms_part) in zip(partitions, partitioned_norms)]
 
-print("Generating number fields...")
+START_TIME = time.time()
+print("Generating number fields... (START TIME={start_time})".format(start_time=START_TIME))
 for args, _ignore in pump_out_fields( arg_list ):
 	args = args[0] # don't want keyword args
 	bounds = args[0]
 	norms = args[1]
-	print("Finished range [{low},{high}] ({n_norms} norms)".format(low=bounds[0], high=bounds[1], n_norms=len(norms)))
+	time_delta = time.time() - START_TIME
+	print("Finished range [{low},{high}] ({n_norms} norms) @T+{time}s".format(low=bounds[0], high=bounds[1], n_norms=len(norms), time=time_delta))
 
