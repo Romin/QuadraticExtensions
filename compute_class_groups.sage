@@ -39,8 +39,7 @@ def pump_out_class_groups( infile_name, outfile_name ):
 			norm,m_str,polynomial = parse_line( line )
 			K = NumberField( polynomial, 'sqrtm', cache=False )
 			K_disc = K.discriminant()
-			#if norm*D2 != K_disc and L4norm*norm*D2 != K_disc:
-			if norm*D2 != K_disc:
+			if norm*D2 != K_disc and L4norm*norm*D2 != K_disc:
 				outfile.write( "{oldstuff}:ERROR norm did not match discriminant:(No class group)\n".format(oldstuff=line) )
 				continue
 			CG = K.class_group(proof=False) # NOTE THIS.
@@ -72,6 +71,6 @@ for _ignore in pump_out_class_groups( args_list ):
 	count += 1
 	if count % 10 == 0:
 		time_delta = time.time() - start_time
-		perc = float(count) / total
+		perc = 100 * float(count) / total
 		print("Finished {count}/{total} ({perc:.2f}%) T+{time_delta:.2f}s".format(count=count,total=total,perc=perc,time_delta=time_delta))
 
