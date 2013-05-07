@@ -1,39 +1,48 @@
 # Code to compute class groups given a list of number fields
 
 import itertools
-import os
+import os, sys
+import time
 
-OUTDIR    = os.path.join( os.getcwd(), "Q_zeta9" )
-INDIR     = os.path.join( os.getcwd(), "Q_zeta9" )
+if len(sys.argv) != 2:
+	raise Exception("I need a list of files to process.")
+
+FILE_LIST = None
+with open(sys.argv[1]) as f:
+	flines = f.readlines()
+	FILE_LIST = map( lambda s: s.strip(), flines )
+
 L.<zeta9> = NumberField(x^6 + x^3 + 1)
-PART_SIZE = 10^4
-START     = 10^0
-END       = 10^8
 
-def parse_numberfield( string ):
-	poly_coeffs_str = string.split(":")[2]
-	poly_coeffs = map( Integer, str(filter(lambda c: c in "-0123456789,",poly_coeffs_str)).split(",") )
-	poly = 0
-	var = 1
-	for c in poly_coeffs:
-		poly += var*c
-		var = var*x
-	return NumberField( poly, 'z' )
+def parse_line( line ):
+	els = line.split(':')
+	norm = Integer(els[0])
+	m_str = els[1]
+	poly_tupled = map(tuple, eval(els[2]))
+	poly = sum( map(lambda (c,p): c*(x^p), poly_tupled) )
+	return norm, m_str, poly
 
 @parallel
-def pump_out_fields_in_range( dlow, dhigh ):
-	infile_name  = os.path.join( INDIR,  "{dlow}-{dhigh}.polys.lst".format(dlow=dlow,dhigh=dhigh) )
-	outfile_name = os.path.join( OUTDIR, "{dlow}-{dhigh}.clsgps.lst".format(dlow=dlow,dhigh=dhigh) )
+def pump_out_class_groups( infile_name, outfile_name ):
 	infile  = open( infile_name,  'r' )
 	outfile = open( outfile_name, 'w' )
+	D = L.discriminant()
+	D2 = D^2
+	L4norm = L(4).norm()
 	for line in infile:
 		line = line.strip()
 		# Ensure line isn't an error line
 		if "ERROR" in line:
-			outfile.write( "{oldstuff}:ERROR:COULD NOT COMPUTE CLASS GROUP\n".format(oldstuff=line) )
+			outfile.write( "{oldstuff}:(No discriminant):(No class group)\n".format(oldstuff=line) )
 			continue
 		try:
-			K = parse_numberfield( line )
+			norm,m_str,polynomial = parse_line( line )
+			K = NumberField( polynomial, 'sqrtm', cache=False )
+			K_disc = K.discriminant()
+			#if norm*D2 != K_disc and L4norm*norm*D2 != K_disc:
+			if norm*D2 != K_disc:
+				outfile.write( "{oldstuff}:ERROR norm did not match discriminant:(No class group)\n".format(oldstuff=line) )
+				continue
 			CG = K.class_group(proof=False) # NOTE THIS.
 			elem_divisors = CG.elementary_divisors()
 			elem_divisors_factored = map( lambda f: list(factor(f)), elem_divisors )
@@ -42,24 +51,27 @@ def pump_out_fields_in_range( dlow, dhigh ):
 				elem_factors += l
 			elem_divisors_sorted = sorted(elem_factors)
 			prime_power_list = map( lambda (p,power): p^power, elem_divisors_sorted )
-			outfile.write( "{oldstuff}:{class_group}\n".format( oldstuff=line, class_group=prime_power_list ) )
+			outfile.write( "{oldstuff}:{disc}:{class_group}\n".format( oldstuff=line, disc=K_disc, class_group=prime_power_list ) )
 		except Exception as e:
-			outfile.write( "{oldstuff}:ERROR:{msg}\n".format(oldstuff=line, msg=e) )
+			outfile.write( "{oldstuff}:ERROR {msg}\n".format(oldstuff=line, msg=e) )
 	outfile.close()
 	infile.close()
 	return
 
-def get_disc_partitions( low, high, size ):
-	n_parts = (high - low + size - 1)/size # ceil((high - low)/size)
-	for i in xrange( n_parts ):
-		z = min( high, low + (i+1)*size - 1 )
-		yield (low + i*size, z)
+infiles = FILE_LIST
+outfiles = map( lambda s: s.replace("polys","clsgps"), FILE_LIST )
 
-partitions = get_disc_partitions( START, END, PART_SIZE )
-args_gen = itertools.imap( lambda (l,h): (l,h), partitions )
+total = len(FILE_LIST)
+count = 0
 
-for _ignore1 in pump_out_fields_in_range( list(args_gen) ):
-	_ignore2 = _ignore1[0]
-	args = _ignore2[0]
-	print("Finished [{dlow},{dhigh}]".format(dlow=args[0],dhigh=args[1]))
+start_time = time.time()
+
+args_list = zip(infiles, outfiles)
+
+for _ignore in pump_out_class_groups( args_list ):
+	count += 1
+	if count % 10 == 0:
+		time_delta = time.time() - start_time
+		perc = float(count) / total
+		print("Finished {count}/{total} ({perc:.2f}%) T+{time_delta:.2f}s".format(count=count,total=total,perc=perc,time_delta=time_delta))
 
