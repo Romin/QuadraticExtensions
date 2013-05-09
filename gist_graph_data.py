@@ -2,50 +2,40 @@ import itertools
 import os
 import sys
 
-INDIR     = os.path.join( os.getcwd(), "Q_zeta9" )
-OUTDIR    = os.path.join( os.getcwd(), "Q_zeta9-analysis" )
+if len(sys.argv) != 7:
+	raise Exception("gist_graph_data.py <primes_file> <data_file> <outdir> <disc_start> <disc_end> <disc_int>")
+
+CLASS_GPS = {}
+with open(sys.argv[1]) as f:
+	CLASS_GPS = eval(f.read())
+PRIMES = sorted(CLASS_GPS.keys())
+
+DATA_FILE=open(sys.argv[2],'r')
+
+OUTDIR    = sys.argv[3]
 OUTFILE_T = os.path.join( OUTDIR, "graph_p={prime}_{class_gp}.dat" )
-PART_SIZE = 10**4
-START     = 10**0
-END       = 10**8
-PRIMES    = [3, 5, 7]
-CLASS_GPS = \
-	{ 3: [(), (3,), (3,3), (9,)]
-	, 5: [(), (5,), (5,5), (25,)]
-	, 7: [(), (7,), (7,7), (49,)]
-	}
 
-def tabulate_class_groups( dlow, dhigh ):
-	def complain(line):
-		sys.stderr.write( "Got invalid class group: {oldstuff}\n".format(oldstuff=line) )
-	infile_name  = os.path.join( INDIR, "{dlow}-{dhigh}.clsgps.lst".format(dlow=dlow,dhigh=dhigh) )
-	infile  = open( infile_name,  'r' )
-	results = {}
-	for line in infile:
-		line = line.strip()
-		# Ensure line isn't an error line
-		if "ERROR" in line:
-			complain(line)
-			continue
-		try:
-			class_group_string = line.split(':')[3]
-			if class_group_string == "[]":
-				class_group_factors = []
-			else:
-				class_group_factors = map( int, str(filter(lambda c: c in "-0123456789,",class_group_string)).split(",") )
-			result_key = tuple(class_group_factors)
-			results[result_key] = results.get(result_key,0) + 1
-		except:
-			complain(line)
-			continue
-	infile.close()
-	return results
+START     = Integer(sys.argv[4])
+END       = Integer(sys.argv[5])
+INTERVAL  = Integer(sys.argv[6])
 
-def get_disc_partitions( low, high, size ):
-	n_parts = (high - low + size - 1)/size # ceil((high - low)/size)
-	for i in xrange( n_parts ):
-		z = min( high, low + (i+1)*size - 1 )
-		yield (low + i*size, z)
+def parse_line( line ):
+	line = line.strip()
+	# Ensure line isn't an error line
+	if "ERROR" in line:
+		return None
+	try:
+		# line is like "{norm}:{m}:{poly coefficients}:{discriminant}:{class group}"
+		components = line.split(':')
+		if len(components) < 5:
+			return None
+		discriminant = int(components[3])
+		class_group_factors = eval(components[4])
+		class_group_factors = tuple(class_group_factors)
+		return discriminant, class_group_factors
+	except:
+		return None
+	return None
 
 def reduce_to_p_part( results, p ):
 	new_results = {}
@@ -55,7 +45,17 @@ def reduce_to_p_part( results, p ):
 		new_results[ppart] = new_results.get(ppart,0) + results[decomposition]
 	return new_results
 
-partitions = get_disc_partitions( START, END, PART_SIZE )
+def dump_results( results ):
+	for p in PRIMES:
+		ppart = reduce_to_p_part(results, p)
+		total = 0
+		for k in ppart:
+			total += ppart[k]
+		for class_gp in CLASS_GPS[p]:
+			this_stat = ppart.get(class_gp,0)
+			percent = 100.0*float(this_stat)/float(total)
+			outline = "{disc_bound} {percent} {count}".format(disc_bound=partition[1], percent=percent, count=this_stat)
+			files[p][class_gp].write(outline+"\n")
 
 files = {}
 for p in PRIMES:
@@ -70,20 +70,21 @@ for p in PRIMES:
 		files[p][class_gp] = open( OUTFILE_T.format(prime=p, class_gp=class_gp_name), 'w' )
 
 results = {}
-for partition in partitions:
-	this_result = tabulate_class_groups( *partition )
-	for k in this_result:
-		results[k] = results.get(k,0) + this_result[k]
-	for p in PRIMES:
-		ppart = reduce_to_p_part(results, p)
-		total = 0
-		for k in ppart:
-			total += ppart[k]
-		for class_gp in CLASS_GPS[p]:
-			this_stat = ppart.get(class_gp,0)
-			percent = 100.0*float(this_stat)/float(total)
-			outline = "{disc_bound} {percent} {count}".format(disc_bound=partition[1], percent=percent, count=this_stat)
-			files[p][class_gp].write(outline+"\n")
+threshold = START
+for line in DATA_FILE:
+	parsing = parse_line( line )
+	if parsing is None:
+		sys.stderr.write("Got invalid class group: {line}".format(line=line.strip()))
+		continue
+	this_disc, this_cls_gp = parsing
+	if this_disc < START:
+		continue
+	if this_disc > threshold:
+		dump_results( results )
+		threshold += INTERVAL
+	if this_disc > END:
+		break
+	results[this_cls_gp] = results.get(this_cls_gp,0) + 1
 
 for p in PRIMES:
 	for class_gp in CLASS_GPS[p]:
