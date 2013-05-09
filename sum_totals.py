@@ -2,15 +2,17 @@ import itertools
 import os
 import sys
 
-INDIR     = os.path.join( os.getcwd(), "Q_zeta9" )
-PART_SIZE = 10**4
-START     = 10**0
-END       = 10**8
+if len(sys.argv) != 2:
+	raise Exception("I need a list of files to process.")
 
-def tabulate_class_groups( dlow, dhigh ):
+FILE_LIST = None
+with open(sys.argv[1]) as f:
+	flines = f.readlines()
+	FILE_LIST = map( lambda s: s.strip(), flines )
+
+def tabulate_class_groups( infile_name ):
 	def complain(line):
 		sys.stderr.write( "Got invalid class group: {oldstuff}\n".format(oldstuff=line) )
-	infile_name  = os.path.join( INDIR, "{dlow}-{dhigh}.clsgps.lst".format(dlow=dlow,dhigh=dhigh) )
 	infile  = open( infile_name,  'r' )
 	results = {}
 	for line in infile:
@@ -33,17 +35,9 @@ def tabulate_class_groups( dlow, dhigh ):
 	infile.close()
 	return results
 
-def get_disc_partitions( low, high, size ):
-	n_parts = (high - low + size - 1)/size # ceil((high - low)/size)
-	for i in xrange( n_parts ):
-		z = min( high, low + (i+1)*size - 1 )
-		yield (low + i*size, z)
-
-partitions = get_disc_partitions( START, END, PART_SIZE )
-
 results = {}
-for partition in partitions:
-	this_result = tabulate_class_groups( *partition )
+for infile in FILE_LIST:
+	this_result = tabulate_class_groups( infile )
 	for k in this_result:
 		results[k] = results.get(k,0) + this_result[k]
 
